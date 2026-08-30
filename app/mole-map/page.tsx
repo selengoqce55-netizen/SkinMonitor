@@ -27,10 +27,12 @@ type Mole = {
 
 function Mannequin({
   onMark,
+  modelPath,
 }: {
   onMark: (position: [number, number, number]) => void;
+  modelPath: string;
 }) {
-  const { scene } = useGLTF("/models/mannequin.gltf");
+  const { scene } = useGLTF(modelPath);
 
   scene.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
@@ -76,8 +78,7 @@ function MoleMarker({
         onClick();
       }}
     >
-      <sphereGeometry args={[highlighted ? 0.04 : 0.025, 16, 16]} />
-
+      <sphereGeometry args={[highlighted ? 0.018 : 0.008, 16, 16]} />
       <meshStandardMaterial
         color={highlighted ? "#FF4F9A" : "#480A23"}
         emissive={highlighted ? "#FF4F9A" : "#000000"}
@@ -89,6 +90,11 @@ function MoleMarker({
 
 export default function MoleMap() {
   const [moles, setMoles] = useState<Mole[]>([]);
+  const [bodyType, setBodyType] = useState<"female" | "male">("female");
+  const modelPath =
+  bodyType === "female"
+    ? "/models/free_human_body_base_mesh_female.glb"
+    : "/models/human_body_base_mesh_male.glb";
   const [selectedMole, setSelectedMole] = useState<number | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -573,7 +579,45 @@ export default function MoleMap() {
 
     setSaving(false);
   };
+const deleteAllMoles = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
+  if (!user) {
+    alert("Please log in first.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Delete ALL marked moles and their records?"
+  );
+
+  if (!confirmed) return;
+
+  setSaving(true);
+
+  const { error } = await supabase
+    .from("moles")
+    .delete()
+    .eq("user_id", user.id);
+
+  if (error) {
+    console.error("Error deleting all moles:", error);
+    alert("Could not delete all moles.");
+    setSaving(false);
+    return;
+  }
+
+  setMoles([]);
+  setSelectedMole(null);
+  setHighlightedMole(null);
+  setIsEditing(false);
+  setEditingRecordId(null);
+  clearForm();
+
+  setSaving(false);
+};
   // =========================
   // DELETE ENTIRE MOLE
   // =========================
@@ -683,7 +727,7 @@ export default function MoleMap() {
       </h1>
 
       <p className="mt-4 text-center text-[#480A23]/70">
-        Click on the body to mark a mole • Click a mole to view its record
+        Click on the body to mark a mole • Click a mole to view its record • Left-click and drag to rotate • Right-click and drag to move the view
       </p>
 
       {loading && (
@@ -703,50 +747,79 @@ export default function MoleMap() {
       <div className="mx-auto mt-10 flex max-w-6xl gap-6">
 
         {/* 3D MODEL */}
+<div className="relative h-[600px] flex-1 overflow-hidden rounded-3xl bg-white">
 
-        <div className="h-[600px] flex-1 overflow-hidden rounded-3xl bg-white">
+  {/* BODY TYPE BUTTONS */}
 
-          <Canvas
-            camera={{
-              position: [0, 1, 7],
-              fov: 45,
-            }}
-          >
+  <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 gap-2">
 
-            <ambientLight intensity={1.5} />
+    <button
+      type="button"
+      onClick={() => setBodyType("female")}
+      className={`rounded-full px-5 py-2 text-sm font-medium shadow-sm ${
+        bodyType === "female"
+          ? "bg-[#480A23] text-white"
+          : "bg-white text-[#480A23]"
+      }`}
+    >
+      Female
+    </button>
 
-            <directionalLight
-              position={[5, 5, 5]}
-              intensity={2}
-            />
+    <button
+      type="button"
+      onClick={() => setBodyType("male")}
+      className={`rounded-full px-5 py-2 text-sm font-medium shadow-sm ${
+        bodyType === "male"
+          ? "bg-[#480A23] text-white"
+          : "bg-white text-[#480A23]"
+      }`}
+    >
+      Male
+    </button>
 
-            <Mannequin onMark={addMole} />
+  </div>
 
-            {moles.map((mole) => (
-              <MoleMarker
-                key={mole.id}
-                position={mole.position}
-                highlighted={
-                  highlightedMole === mole.id
-                }
-                onClick={() =>
-                  selectMole(mole)
-                }
-              />
-            ))}
+  {/* 3D CANVAS */}
 
-            <OrbitControls
-              enablePan={false}
-              enableZoom={true}
-              enableRotate={true}
-              minDistance={4}
-              maxDistance={10}
-            />
+  <Canvas
+    camera={{
+      position: [0, 1, 7],
+      fov: 45,
+    }}
+  >
 
-          </Canvas>
+    <ambientLight intensity={1.5} />
 
-        </div>
+    <directionalLight
+      position={[5, 5, 5]}
+      intensity={2}
+    />
 
+    <Mannequin
+      onMark={addMole}
+      modelPath={modelPath}
+    />
+
+    {moles.map((mole) => (
+      <MoleMarker
+        key={mole.id}
+        position={mole.position}
+        highlighted={highlightedMole === mole.id}
+        onClick={() => selectMole(mole)}
+      />
+    ))}
+
+    <OrbitControls
+      enablePan={true}
+      enableZoom={true}
+      enableRotate={true}
+      minDistance={2}
+      maxDistance={12}
+    />
+
+  </Canvas>
+
+</div>
         {/* SIDE PANEL */}
 
         {selectedMole !== null &&
@@ -1299,6 +1372,13 @@ export default function MoleMap() {
               } marked.`}
 
         </p>
+        <button
+  onClick={deleteAllMoles}
+  disabled={saving || moles.length === 0}
+  className="mt-4 rounded-xl border border-red-200 px-4 py-3 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+>
+  Delete All Moles
+</button>
 
       </div>
 
